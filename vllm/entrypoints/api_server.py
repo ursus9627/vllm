@@ -2,10 +2,9 @@ import argparse
 import json
 from typing import AsyncGenerator
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-import uvicorn
-
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.sampling_params import SamplingParams
@@ -27,9 +26,14 @@ async def generate(request: Request) -> Response:
     - other fields: the sampling parameters (See `SamplingParams` for details).
     """
     request_dict = await request.json()
-    prompt = request_dict.pop("prompt")
+    prompt = request_dict.pop("inputs")
+    parameters = request_dict.pop("parameters")
+    max_new_tokens = parameters.pop("max_new_tokens")
+    do_sample = parameters.pop("do_sample", True)
     stream = request_dict.pop("stream", False)
-    sampling_params = SamplingParams(**request_dict)
+    sampling_params = SamplingParams(max_tokens=max_new_tokens,
+                                     use_beam_search=not do_sample,
+                                     **parameters)
     request_id = random_uuid()
 
     results_generator = engine.generate(prompt, sampling_params, request_id)
@@ -59,7 +63,7 @@ async def generate(request: Request) -> Response:
     assert final_output is not None
     prompt = final_output.prompt
     text_outputs = [prompt + output.text for output in final_output.outputs]
-    ret = {"text": text_outputs}
+    ret = {"generated_text": text_outputs[0], "status": 200}
     return JSONResponse(ret)
 
 
